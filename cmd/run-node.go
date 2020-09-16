@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"os/exec"
 	"strconv"
@@ -36,6 +38,7 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 	defer cli.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	//ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()
 
 	experimentVersionResp, err := cli.Get(ctx, ExperimentVersion)
@@ -53,7 +56,7 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 	session, _ := concurrency.NewSession(cli)
 	defer session.Close()
 
-	nodeID, mutex, err := accuireLock(numberOfNodes, session)
+	nodeID, mutexNodeFile, err := accuireLockOnNodeFile(numberOfNodes, session)
 	if err != nil {
 		fmt.Println("Error: ", err)
 		return
@@ -64,8 +67,30 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 	zipFileName := downloadNodeFolder(cli, nodeID)
 	extractZipFile(zipFileName)
 
-	time.Sleep(2 * time.Second)
-	mutex.Unlock(context.TODO())
+	time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
+
+	mutexNodeList := accuireLockOnNodeList(session)
+
+	nodeListResponse, err := cli.Get(ctx, ExperimentNodeList)
+	handleErrorWithPanic(err)
+
+	nodeList := ""
+	if len(nodeListResponse.Kvs) > 0 {
+		nodeList = string(nodeListResponse.Kvs[0].Value)
+		fmt.Println(nodeList)
+	}
+
+	algorandCmd, nodeNetAddress := startAlgorandProcess(nodeID, nodeList)
+
+	nodeList = fmt.Sprintf("%s;%s", nodeList, nodeNetAddress)
+	_, err = cli.Put(ctx, ExperimentNodeList, nodeList)
+	handleErrorWithPanic(err)
+	mutexNodeList.Unlock(context.TODO())
+
+	err = algorandCmd.Wait()
+	handleErrorWithPanic(err)
+
+	mutexNodeFile.Unlock(context.TODO())
 
 }
 
@@ -80,10 +105,12 @@ func extractZipFile(zipFile string) {
 		panic(fmt.Errorf("Error: could not find unzip in path"))
 	}
 
+	fmt.Println("Zip fle : ", zipFile)
+
 	unzipCmd := &exec.Cmd{
-		Path:   unzipExecutable,
-		Args:   []string{unzipExecutable, zipFile},
-		Stdout: os.Stdout,
+		Path: unzipExecutable,
+		Args: []string{unzipExecutable, zipFile},
+		//Stdout: os.Stdout,
 		Stderr: os.Stdout,
 	}
 
@@ -108,10 +135,14 @@ func downloadNodeFolder(etcdClient *clientv3.Client, nodeID int) string {
 	err = ioutil.WriteFile(fmt.Sprintf("./%s", fileName), zipFileBytes, 0644)
 	handleErrorWithPanic(err)
 
+	nodeFileInUseKey := fmt.Sprintf("%s/%d", ExperimentNodeFilesInUse, nodeID)
+	_, err = etcdClient.Put(ctx, nodeFileInUseKey, "true")
+	handleErrorWithPanic(err)
+
 	return fileName
 }
 
-func accuireLock(numberOfNodes int, etcdSession *concurrency.Session) (int, *concurrency.Mutex, error) {
+func accuireLockOnNodeFile(numberOfNodes int, etcdSession *concurrency.Session) (int, *concurrency.Mutex, error) {
 
 	var err error
 
@@ -128,8 +159,129 @@ func accuireLock(numberOfNodes int, etcdSession *concurrency.Session) (int, *con
 			return 0, nil, err
 		}
 
+		nodeFileInUseKey := fmt.Sprintf("%s/%d", ExperimentNodeFilesInUse, i)
+		nodeFileInUseResponse, err := etcdSession.Client().Get(context.TODO(), nodeFileInUseKey)
+		handleErrorWithPanic(err)
+
+		if nodeFileInUseResponse.Count != 0 {
+			err = mutex.Unlock(context.TODO())
+			handleErrorWithPanic(err)
+			continue
+		}
+
 		return i, mutex, nil
 	}
 
 	return 0, nil, fmt.Errorf("Could not accuired lock. Did you run too many node?")
+}
+
+func accuireLockOnNodeList(etcdSession *concurrency.Session) *concurrency.Mutex {
+	mutexName := ExperimentNodeListLock
+	mutex := concurrency.NewMutex(etcdSession, mutexName)
+	//TODO: Handle error here!!!!
+	mutex.Lock(context.TODO())
+
+	return mutex
+}
+
+func startAlgorandProcess(nodeID int, relayNodeList string) (*exec.Cmd, string) {
+
+	goalExecutable, err := exec.LookPath("goal")
+	if err != nil {
+		panic(fmt.Errorf("Error: could not find goal in path"))
+	}
+
+	//goal node start -d data -p "ipaddress-1:4161;ipaddress-2:4161"
+
+	dataFolderName := fmt.Sprintf("Node-%d", nodeID)
+
+	IPAddress := "127.0.0.1"
+	basePortNumber := 9373
+
+	nodeNetAddress := configureNodeNetAddress(dataFolderName, nodeID, IPAddress, basePortNumber)
+
+	var args []string
+	if len(relayNodeList) > 0 {
+		args = []string{goalExecutable, "node", "start", "-d", dataFolderName, "-p", relayNodeList}
+	} else {
+		args = []string{goalExecutable, "node", "start", "-d", dataFolderName}
+	}
+
+	algorandCmd := &exec.Cmd{
+		Path: goalExecutable,
+		Args: args,
+		//Stdout: os.Stdout,
+		//Stderr: os.Stdout,
+	}
+
+	fmt.Println("Command: ", algorandCmd.String())
+
+	err = algorandCmd.Start()
+	if err != nil {
+		panic(fmt.Errorf("Error: could not start an algorand process"))
+	}
+
+	fmt.Println("Algorand process id: ", algorandCmd.Process.Pid)
+
+	return algorandCmd, nodeNetAddress
+}
+
+func configureNodeNetAddress(dataFolderName string, nodeID int, IPAddress string, basePortNumber int) string {
+	netAddress := fmt.Sprintf("%s:%d", IPAddress, basePortNumber+nodeID)
+	nodeConfig := getNodeConfig(dataFolderName)
+	nodeConfig.NetAddress = netAddress
+
+	writeNodeConfig(dataFolderName, nodeConfig)
+
+	fmt.Println("noed config is %+v", nodeConfig)
+
+	return netAddress
+}
+
+/*********************************************************************************************************************/
+
+type nodeConfig struct {
+	GossipFanout    int
+	EndpointAddress string
+	DNSBootstrapID  string
+	EnableProfiler  bool
+	NetAddress      string
+}
+
+func getConfigFileName(dataFolderName string) string {
+	return fmt.Sprintf("%s/config.json", dataFolderName)
+}
+
+func getNodeConfig(dataFolderName string) nodeConfig {
+
+	configFileName := getConfigFileName(dataFolderName)
+
+	fmt.Println("Config file name: ", configFileName)
+
+	jsonFile, err := os.Open(configFileName)
+	if err != nil {
+		panic(fmt.Errorf("Error: could not open node config file to READ: %s", configFileName))
+	}
+
+	byteValue, _ := ioutil.ReadAll(jsonFile)
+
+	var config nodeConfig
+	json.Unmarshal(byteValue, &config)
+
+	jsonFile.Close()
+
+	return config
+}
+
+func writeNodeConfig(dataFolderName string, config nodeConfig) {
+
+	configFileName := getConfigFileName(dataFolderName)
+	byteValue, err := json.Marshal(config)
+	if err != nil {
+		panic(fmt.Errorf("Error: could not marshal node config file: %v", err))
+	}
+
+	err = ioutil.WriteFile(configFileName, byteValue, 0666)
+	handleErrorWithPanic(err)
+
 }
