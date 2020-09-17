@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,7 +33,7 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{"127.0.0.1:2379"},
-		DialTimeout: 2 * time.Second,
+		DialTimeout: 5 * time.Second,
 	})
 	handleErrorWithPanic(err)
 	defer cli.Close()
@@ -58,11 +59,9 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 
 	nodeID, mutexNodeFile, err := accuireLockOnNodeFile(numberOfNodes, session)
 	if err != nil {
-		fmt.Println("Error: ", err)
+		fmt.Println(err)
 		return
 	}
-
-	fmt.Println("Mutex locked: ", nodeID)
 
 	zipFileName := downloadNodeFolder(cli, nodeID)
 	extractZipFile(zipFileName)
@@ -77,12 +76,16 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 	nodeList := ""
 	if len(nodeListResponse.Kvs) > 0 {
 		nodeList = string(nodeListResponse.Kvs[0].Value)
-		fmt.Println(nodeList)
 	}
 
 	algorandCmd, nodeNetAddress := startAlgorandProcess(nodeID, nodeList)
 
-	nodeList = fmt.Sprintf("%s;%s", nodeList, nodeNetAddress)
+	if nodeList == "" {
+		nodeList = nodeNetAddress
+	} else {
+		nodeList = fmt.Sprintf("%s;%s", nodeList, nodeNetAddress)
+	}
+
 	_, err = cli.Put(ctx, ExperimentNodeList, nodeList)
 	handleErrorWithPanic(err)
 	mutexNodeList.Unlock(context.TODO())
@@ -90,12 +93,126 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 	err = algorandCmd.Wait()
 	handleErrorWithPanic(err)
 
+	fmt.Println("Node started successfuly. Waiting for commands...")
+
+	waitForStopCommand(cli)
+	err = killAlgodProcess(nodeID)
+	if err != nil {
+		panic(err)
+	}
+
+	// Removes in use key
+	nodeFileInUseKey := fmt.Sprintf("%s/%d", ExperimentNodeFilesInUse, nodeID)
+	_, err = cli.Delete(context.TODO(), nodeFileInUseKey)
+	handleErrorWithPanic(err)
+
+	// Remove node information from node list
+	mutexNodeList = accuireLockOnNodeList(session)
+
+	IPAddress := "127.0.0.1"
+	basePortNumber := 9373
+	err = removeNodeInfoFromNodeList(nodeID, IPAddress, basePortNumber, session)
+	handleErrorWithPanic(err)
+
+	mutexNodeList.Unlock(context.TODO())
+
+	// Remove lock on node file
 	mutexNodeFile.Unlock(context.TODO())
+
+	fmt.Println("Node stoped successfuly.")
 
 }
 
-func runAlgorandNode(dataFolder string) {
+func removeNodeInfoFromNodeList(nodeID int, IPAddress string, basePortNumber int, etcdSession *concurrency.Session) error {
 
+	netAddress := getNetAddress(nodeID, IPAddress, basePortNumber)
+	nodeListResp, err := etcdSession.Client().Get(context.TODO(), ExperimentNodeList)
+	if err != nil {
+		return err
+	}
+
+	if len(nodeListResp.Kvs) == 0 {
+		return nil
+	}
+
+	nodeListString := string(nodeListResp.Kvs[0].Value)
+
+	fmt.Println("(BEF) Node list string:", nodeListString)
+
+	nodeInfos := strings.Split(nodeListString, ";")
+
+	var netAddressIndex = -1
+	for i, n := range nodeInfos {
+		if n == netAddress {
+			netAddressIndex = i
+			break
+		}
+	}
+
+	if netAddressIndex == -1 {
+		return fmt.Errorf("Could not find net address in the node list")
+	}
+
+	nodeInfos = append(nodeInfos[:netAddressIndex], nodeInfos[netAddressIndex+1:]...)
+
+	nodeListString = strings.Join(nodeInfos[:], ";")
+
+	fmt.Println("(AFT) Node list string:", nodeListString)
+
+	_, err = etcdSession.Client().Put(context.TODO(), ExperimentNodeList, nodeListString)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func waitForStopCommand(etcdClient *clientv3.Client) {
+
+	rch := etcdClient.Watch(context.Background(), ExperimentNodeCommandStop)
+	for wresp := range rch {
+		for _, ev := range wresp.Events {
+
+			if ev.Type == clientv3.EventTypePut {
+				return
+			}
+
+		}
+	}
+
+}
+
+func killAlgodProcess(nodeID int) error {
+
+	dataFolderName := fmt.Sprintf("Node-%d", nodeID)
+	pidFileName := fmt.Sprintf("%s/algod.pid", dataFolderName)
+	pidBytes, err := ioutil.ReadFile(pidFileName)
+	if err != nil {
+		return fmt.Errorf("Error: Could not read algod pid file. Error message %s", err)
+	}
+
+	trimmedPIDString := strings.TrimSpace(string(pidBytes))
+	algodPID, err := strconv.Atoi(trimmedPIDString)
+	if err != nil {
+		return fmt.Errorf("Error: Could not convert algod pid from string to int. Error message %s", err)
+	}
+
+	killExecutable, err := exec.LookPath("kill")
+	if err != nil {
+		return fmt.Errorf("Error: could not find kill in path")
+	}
+
+	killCmd := &exec.Cmd{
+		Path: killExecutable,
+		Args: []string{killExecutable, "-9", strconv.Itoa(algodPID)},
+	}
+
+	err = killCmd.Run()
+	if err != nil {
+		return fmt.Errorf("Error: Could not kill algod process. Error message %s", err)
+	}
+
+	return nil
 }
 
 func extractZipFile(zipFile string) {
@@ -104,8 +221,6 @@ func extractZipFile(zipFile string) {
 	if err != nil {
 		panic(fmt.Errorf("Error: could not find unzip in path"))
 	}
-
-	fmt.Println("Zip fle : ", zipFile)
 
 	unzipCmd := &exec.Cmd{
 		Path: unzipExecutable,
@@ -214,28 +329,28 @@ func startAlgorandProcess(nodeID int, relayNodeList string) (*exec.Cmd, string) 
 		//Stderr: os.Stdout,
 	}
 
-	fmt.Println("Command: ", algorandCmd.String())
+	//fmt.Println("Command: ", algorandCmd.String())
 
 	err = algorandCmd.Start()
 	if err != nil {
 		panic(fmt.Errorf("Error: could not start an algorand process"))
 	}
 
-	fmt.Println("Algorand process id: ", algorandCmd.Process.Pid)
-
 	return algorandCmd, nodeNetAddress
 }
 
 func configureNodeNetAddress(dataFolderName string, nodeID int, IPAddress string, basePortNumber int) string {
-	netAddress := fmt.Sprintf("%s:%d", IPAddress, basePortNumber+nodeID)
+	netAddress := getNetAddress(nodeID, IPAddress, basePortNumber)
 	nodeConfig := getNodeConfig(dataFolderName)
 	nodeConfig.NetAddress = netAddress
 
 	writeNodeConfig(dataFolderName, nodeConfig)
 
-	fmt.Println("noed config is %+v", nodeConfig)
-
 	return netAddress
+}
+
+func getNetAddress(nodeID int, IPAddress string, basePortNumber int) string {
+	return fmt.Sprintf("%s:%d", IPAddress, basePortNumber+nodeID)
 }
 
 /*********************************************************************************************************************/
@@ -255,8 +370,6 @@ func getConfigFileName(dataFolderName string) string {
 func getNodeConfig(dataFolderName string) nodeConfig {
 
 	configFileName := getConfigFileName(dataFolderName)
-
-	fmt.Println("Config file name: ", configFileName)
 
 	jsonFile, err := os.Open(configFileName)
 	if err != nil {

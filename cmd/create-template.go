@@ -70,12 +70,6 @@ type networkTemplate struct {
 	Nodes   []node
 }
 
-func handleErrorWithPanic(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
 func createNetworkTemplate(numberOfNodes int) networkTemplate {
 
 	individualStake := float64(100) / float64(numberOfNodes)
