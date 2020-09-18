@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"go.etcd.io/etcd/clientv3"
 )
 
 func init() {
@@ -21,10 +20,8 @@ var stopNodesCmd = &cobra.Command{
 
 func stopNodesCmdRun(cmd *cobra.Command, args []string) {
 
-	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{"127.0.0.1:2379"},
-		DialTimeout: 2 * time.Second,
-	})
+	etcdAddres := getEtcdAddress()
+	cli, err := getEtcdClient(etcdAddres)
 
 	handleErrorWithPanic(err)
 	defer cli.Close()
