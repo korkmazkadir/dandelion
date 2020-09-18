@@ -77,7 +77,10 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 		nodeList = string(nodeListResponse.Kvs[0].Value)
 	}
 
-	algorandCmd, nodeNetAddress := startAlgorandProcess(nodeID, nodeList)
+	IPAddress := GetOutboundIP().String()
+	basePortNumber := 9373
+
+	algorandCmd, nodeNetAddress := startAlgorandProcess(nodeID, IPAddress, basePortNumber, nodeList)
 
 	if nodeList == "" {
 		nodeList = nodeNetAddress
@@ -108,8 +111,6 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 	// Remove node information from node list
 	mutexNodeList = accuireLockOnNodeList(session)
 
-	IPAddress := "127.0.0.1"
-	basePortNumber := 9373
 	err = removeNodeInfoFromNodeList(nodeID, IPAddress, basePortNumber, session)
 	handleErrorWithPanic(err)
 
@@ -298,7 +299,7 @@ func accuireLockOnNodeList(etcdSession *concurrency.Session) *concurrency.Mutex 
 	return mutex
 }
 
-func startAlgorandProcess(nodeID int, relayNodeList string) (*exec.Cmd, string) {
+func startAlgorandProcess(nodeID int, IPAddress string, basePortNumber int, relayNodeList string) (*exec.Cmd, string) {
 
 	goalExecutable, err := exec.LookPath("goal")
 	if err != nil {
@@ -308,9 +309,6 @@ func startAlgorandProcess(nodeID int, relayNodeList string) (*exec.Cmd, string) 
 	//goal node start -d data -p "ipaddress-1:4161;ipaddress-2:4161"
 
 	dataFolderName := fmt.Sprintf("Node-%d", nodeID)
-
-	IPAddress := "127.0.0.1"
-	basePortNumber := 9373
 
 	nodeNetAddress := configureNodeNetAddress(dataFolderName, nodeID, IPAddress, basePortNumber)
 

@@ -20,5 +20,4 @@ RUN curl --location --remote-header-name --remote-name https://github.com/korkma
 && rm dandelion_linux-amd64.zip
 
 
-ENTRYPOINT ["./dandelion", "run-node"]
-
+ENTRYPOINT ["dandelion", "run-node"]
