@@ -1,17 +1,18 @@
 package dbconnector
 
-/*dbConnector interface defines an
+/*DBConnector interface defines an
 interface for key value store to use in danelion*/
-type dbConnector interface {
-	get(key string) ([]byte, error)
-	put(key string, value string) error
-	delete(key string) error
+type DBConnector interface {
+	Get(key string) ([]byte, error)
+	GetWithPrefix(prefix string) ([][]byte, error)
+	Put(key string, value string) error
+	Delete(key string) error
 
-	lock(name string) error
-	tryLock(name string) error
-	unlock(name string) error
+	Lock(name string) error
+	TryLock(name string) error
+	Unlock(name string) error
 
-	watchPutEvents(key string) []byte
+	WatchPutEvents(key string) []byte
 
-	close() error
+	Close() error
 }

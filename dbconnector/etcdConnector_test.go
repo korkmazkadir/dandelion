@@ -17,13 +17,13 @@ func TestPutGet(t *testing.T) {
 	key1 := "key-1"
 	value1 := "value-1"
 
-	err = connector.put(key1, value1)
+	err = connector.Put(key1, value1)
 	if err != nil {
 		t.Errorf("Error:%s", err)
 		return
 	}
 
-	value, err := connector.get(key1)
+	value, err := connector.Get(key1)
 
 	valueString := string(value)
 
@@ -32,7 +32,7 @@ func TestPutGet(t *testing.T) {
 		return
 	}
 
-	err = connector.close()
+	err = connector.Close()
 	if err != nil {
 		t.Errorf("close error: %s", err)
 	}
@@ -49,19 +49,19 @@ func TestPutDeleteGet(t *testing.T) {
 	key1 := "key-2"
 	value1 := "value-to-delete"
 
-	err = connector.put(key1, value1)
+	err = connector.Put(key1, value1)
 	if err != nil {
 		t.Errorf("Error:%s", err)
 		return
 	}
 
-	err = connector.delete(key1)
+	err = connector.Delete(key1)
 	if err != nil {
 		t.Errorf("Delete Error:%s", err)
 		return
 	}
 
-	value, err := connector.get(key1)
+	value, err := connector.Get(key1)
 	if err != nil {
 		t.Errorf("Get Error:%s", err)
 	}
@@ -73,7 +73,7 @@ func TestPutDeleteGet(t *testing.T) {
 		return
 	}
 
-	err = connector.close()
+	err = connector.Close()
 	if err != nil {
 		t.Errorf("close error: %s", err)
 	}
@@ -89,7 +89,7 @@ func TestLockUnlock(t *testing.T) {
 	}
 
 	lockName := "ds-lock"
-	err = connector.lock(lockName)
+	err = connector.Lock(lockName)
 	if err != nil {
 		t.Errorf("Locking Error:%s", err)
 		return
@@ -97,13 +97,13 @@ func TestLockUnlock(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	err = connector.unlock(lockName)
+	err = connector.Unlock(lockName)
 	if err != nil {
 		t.Errorf("Unlocking Error:%s", err)
 		return
 	}
 
-	err = connector.close()
+	err = connector.Close()
 	if err != nil {
 		t.Errorf("close error: %s", err)
 	}
@@ -125,7 +125,7 @@ func TestTryLock(t *testing.T) {
 	}
 
 	lockName := "hello-there"
-	err = connector1.tryLock(lockName)
+	err = connector1.TryLock(lockName)
 	if err != nil {
 		t.Errorf("TryLock Error:%s", err)
 		return
@@ -133,19 +133,19 @@ func TestTryLock(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	err = connector2.tryLock(lockName)
+	err = connector2.TryLock(lockName)
 	if err == nil {
 		t.Errorf("TryLock Error: it must fail but it did not")
 		return
 	}
 
-	err = connector1.unlock(lockName)
+	err = connector1.Unlock(lockName)
 	if err != nil {
 		t.Errorf("Unlock Error:%s", err)
 		return
 	}
 
-	err = connector2.tryLock(lockName)
+	err = connector2.TryLock(lockName)
 	if err != nil {
 		t.Errorf("TryLock Error:%s", err)
 		return
@@ -153,18 +153,18 @@ func TestTryLock(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	err = connector2.unlock(lockName)
+	err = connector2.Unlock(lockName)
 	if err != nil {
 		t.Errorf("Unlock Error:%s", err)
 		return
 	}
 
-	err = connector1.close()
+	err = connector1.Close()
 	if err != nil {
 		t.Errorf("close error: %s", err)
 	}
 
-	err = connector2.close()
+	err = connector2.Close()
 	if err != nil {
 		t.Errorf("close error: %s", err)
 	}
@@ -188,7 +188,7 @@ func TestWatchPutEvents(t *testing.T) {
 
 	go func() {
 
-		result := connector1.watchPutEvents(watchKeyName)
+		result := connector1.WatchPutEvents(watchKeyName)
 		resultString := string(result)
 
 		if resultString != value {
@@ -205,19 +205,19 @@ func TestWatchPutEvents(t *testing.T) {
 		return
 	}
 
-	err = connector2.put(watchKeyName, value)
+	err = connector2.Put(watchKeyName, value)
 	if err != nil {
 		t.Errorf("Error:%s", err)
 	}
 
 	wg.Wait()
 
-	err = connector1.close()
+	err = connector1.Close()
 	if err != nil {
 		t.Errorf("close error: %s", err)
 	}
 
-	err = connector2.close()
+	err = connector2.Close()
 	if err != nil {
 		t.Errorf("close error: %s", err)
 	}
@@ -235,6 +235,6 @@ func TestInterface(t *testing.T) {
 
 }
 
-func doSomethingWithConnection(connector dbConnector, t *testing.T) {
+func doSomethingWithConnection(connector DBConnector, t *testing.T) {
 
 }

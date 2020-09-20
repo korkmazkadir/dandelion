@@ -53,7 +53,7 @@ func createEtcdSession(cli *clientv3.Client) (*concurrency.Session, error) {
 	return session, err
 }
 
-func (connector EtcdConnector) get(key string) ([]byte, error) {
+func (connector EtcdConnector) Get(key string) ([]byte, error) {
 
 	resp, err := connector.cli.Get(context.TODO(), key)
 	if err != nil {
@@ -67,19 +67,35 @@ func (connector EtcdConnector) get(key string) ([]byte, error) {
 	return nil, nil
 }
 
-func (connector EtcdConnector) put(key string, value string) error {
+func (connector EtcdConnector) GetWithPrefix(prefix string) ([][]byte, error) {
+
+	resp, err := connector.cli.Get(context.TODO(), prefix, clientv3.WithPrefix())
+
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([][]byte, len(resp.Kvs))
+	for i := 0; i < len(resp.Kvs); i++ {
+		results[i] = resp.Kvs[0].Value
+	}
+
+	return results, nil
+}
+
+func (connector EtcdConnector) Put(key string, value string) error {
 
 	_, err := connector.cli.Put(context.TODO(), key, value)
 	return err
 }
 
-func (connector EtcdConnector) delete(key string) error {
+func (connector EtcdConnector) Delete(key string) error {
 
 	_, err := connector.cli.Delete(context.TODO(), key)
 	return err
 }
 
-func (connector EtcdConnector) lock(name string) error {
+func (connector EtcdConnector) Lock(name string) error {
 
 	mutex := concurrency.NewMutex(connector.session, name)
 	err := mutex.Lock(context.TODO())
@@ -90,7 +106,7 @@ func (connector EtcdConnector) lock(name string) error {
 	return err
 }
 
-func (connector EtcdConnector) unlock(name string) error {
+func (connector EtcdConnector) Unlock(name string) error {
 
 	mutex, isAvailable := connector.lockMap[name]
 	if isAvailable == false {
@@ -105,7 +121,7 @@ func (connector EtcdConnector) unlock(name string) error {
 	return err
 }
 
-func (connector EtcdConnector) tryLock(name string) error {
+func (connector EtcdConnector) TryLock(name string) error {
 
 	mutex := concurrency.NewMutex(connector.session, name)
 	err := mutex.TryLock(context.TODO())
@@ -118,7 +134,7 @@ func (connector EtcdConnector) tryLock(name string) error {
 
 /*This will return the first value. Currently it is good neough.
 Consider using versions because this may cause the lost of a put event*/
-func (connector EtcdConnector) watchPutEvents(key string) []byte {
+func (connector EtcdConnector) WatchPutEvents(key string) []byte {
 
 	rch := connector.cli.Watch(context.Background(), key)
 	for wresp := range rch {
@@ -133,7 +149,7 @@ func (connector EtcdConnector) watchPutEvents(key string) []byte {
 	return nil
 }
 
-func (connector EtcdConnector) close() error {
+func (connector EtcdConnector) Close() error {
 
 	if connector.session != nil {
 		err := connector.session.Close()
