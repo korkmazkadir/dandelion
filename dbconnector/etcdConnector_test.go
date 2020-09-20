@@ -1,6 +1,7 @@
 package dbconnector
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
@@ -167,5 +168,73 @@ func TestTryLock(t *testing.T) {
 	if err != nil {
 		t.Errorf("close error: %s", err)
 	}
+
+}
+
+func TestWatchPutEvents(t *testing.T) {
+
+	connector1, err := CreateEtcdConnector("127.0.0.1:2379")
+	if err != nil {
+		t.Errorf("Error:%s", err)
+		return
+	}
+
+	watchKeyName := "key-123"
+	value := "hello-world"
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+
+	go func() {
+
+		result := connector1.watchPutEvents(watchKeyName)
+		resultString := string(result)
+
+		if resultString != value {
+			t.Errorf("Error: Could not read same value. Expected [%s], received [%s]", value, resultString)
+		}
+
+		wg.Done()
+
+	}()
+
+	connector2, err := CreateEtcdConnector("127.0.0.1:2379")
+	if err != nil {
+		t.Errorf("Error:%s", err)
+		return
+	}
+
+	err = connector2.put(watchKeyName, value)
+	if err != nil {
+		t.Errorf("Error:%s", err)
+	}
+
+	wg.Wait()
+
+	err = connector1.close()
+	if err != nil {
+		t.Errorf("close error: %s", err)
+	}
+
+	err = connector2.close()
+	if err != nil {
+		t.Errorf("close error: %s", err)
+	}
+
+}
+
+func TestInterface(t *testing.T) {
+	connector, err := CreateEtcdConnector("127.0.0.1:2379")
+	if err != nil {
+		t.Errorf("Error:%s", err)
+		return
+	}
+
+	doSomethingWithConnection(connector, t)
+
+}
+
+func doSomethingWithConnection(connector dbConnector, t *testing.T) {
 
 }

@@ -116,21 +116,20 @@ func (connector EtcdConnector) tryLock(name string) error {
 	return err
 }
 
-func (connector EtcdConnector) watchPutEvents(key string, function onPutEvent) error {
+/*This will return the first value. Currently it is good neough.
+Consider using versions because this may cause the lost of a put event*/
+func (connector EtcdConnector) watchPutEvents(key string) []byte {
 
 	rch := connector.cli.Watch(context.Background(), key)
 	for wresp := range rch {
 		for _, ev := range wresp.Events {
 
 			if ev.Type == clientv3.EventTypePut {
-				value := string(ev.Kv.Value)
-				function(key, value)
+				return ev.Kv.Value
 			}
-
 		}
 	}
 
-	//TODO
 	return nil
 }
 
