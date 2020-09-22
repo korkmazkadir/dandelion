@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -20,17 +18,10 @@ var stopNodesCmd = &cobra.Command{
 
 func stopNodesCmdRun(cmd *cobra.Command, args []string) {
 
-	etcdAddres := getEtcdAddress()
-	cli, err := getEtcdClient(etcdAddres)
+	dbConnector := getDBConnector()
+	defer dbConnector.Close()
 
-	handleErrorWithPanic(err)
-	defer cli.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	//ctx, cancel := context.WithCancel(context.TODO())
-	defer cancel()
-
-	_, err = cli.Put(ctx, ExperimentNodeCommandStop, "true")
+	err := dbConnector.Put(ExperimentNodeCommandStop, "true")
 	if err != nil {
 		fmt.Println("Error: Could not set command/kill key on etcd. The error is ", err)
 	}

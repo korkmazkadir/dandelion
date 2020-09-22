@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,10 +8,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
+	"../dbconnector"
 	"github.com/spf13/cobra"
-	"go.etcd.io/etcd/clientv3"
 )
 
 func init() {
@@ -53,22 +51,16 @@ func createExperimentCmdValidateArgs(cmd *cobra.Command, args []string) error {
 
 func createExperimentCmdRun(cmd *cobra.Command, args []string) {
 
-	etcdAddres := getEtcdAddress()
-	cli, err := getEtcdClient(etcdAddres)
+	dbConnector := getDBConnector()
+	defer dbConnector.Close()
 
-	handleErrorWithPanic(err)
-	defer cli.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	response, err := cli.Get(ctx, ExperimentKeyPrefix, clientv3.WithPrefix(), clientv3.WithCountOnly())
+	response, err := dbConnector.GetWithPrefix(ExperimentKeyPrefix)
 	if err != nil {
 		fmt.Println("Error: ", err)
 		return
 	}
 
-	if response.Count > 0 {
+	if len(response) > 0 {
 		fmt.Println("Error: there is already an experiment registered. Remove the experiment properly before starting a new one ")
 		return
 	}
@@ -76,10 +68,10 @@ func createExperimentCmdRun(cmd *cobra.Command, args []string) {
 	experimentVersion := args[1]
 	numberOfNodes := args[2]
 
-	_, err = cli.Put(ctx, ExperimentVersion, experimentVersion)
+	err = dbConnector.Put(ExperimentVersion, experimentVersion)
 	handleErrorWithPanic(err)
 
-	_, err = cli.Put(ctx, ExperimentNumberOfNodes, numberOfNodes)
+	err = dbConnector.Put(ExperimentNumberOfNodes, numberOfNodes)
 	handleErrorWithPanic(err)
 
 	networkFolderPath := args[0]
@@ -100,7 +92,7 @@ func createExperimentCmdRun(cmd *cobra.Command, args []string) {
 				panic(err)
 			}
 
-			uploadETCD(cli, f, reader)
+			uploadToDB(dbConnector, f, reader)
 
 			uploadedFileCount = uploadedFileCount + 1
 		}
@@ -113,14 +105,12 @@ func createExperimentCmdRun(cmd *cobra.Command, args []string) {
 
 }
 
-func uploadETCD(etcdCli *clientv3.Client, fileInfo os.FileInfo, reader io.Reader) {
+func uploadToDB(dbConnector dbconnector.DBConnector, fileInfo os.FileInfo, reader io.Reader) {
 
 	key := fileInfo.Name()
 	value := loadFile(reader)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	_, err := etcdCli.Put(ctx, fmt.Sprintf("%s/%s", ExperimentNodeFiles, key), string(value))
-	cancel()
 
+	err := dbConnector.Put(fmt.Sprintf("%s/%s", ExperimentNodeFiles, key), string(value))
 	handleErrorWithPanic(err)
 }
 

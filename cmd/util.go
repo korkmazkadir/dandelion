@@ -5,6 +5,7 @@ import (
 	"net"
 	"time"
 
+	"../dbconnector"
 	"go.etcd.io/etcd/clientv3"
 )
 
@@ -32,6 +33,17 @@ func getEtcdClient(etcdAddress string) (*clientv3.Client, error) {
 	})
 
 	return cli, err
+}
+
+func getDBConnector() dbconnector.DBConnector {
+
+	etcdAddress := getEtcdAddress()
+	connector, err := dbconnector.CreateEtcdConnector(etcdAddress)
+	if err != nil {
+		handleErrorWithPanic(err)
+	}
+
+	return connector
 }
 
 func GetOutboundIP() net.IP {

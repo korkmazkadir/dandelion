@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,9 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"../dbconnector"
 	"github.com/spf13/cobra"
-	"go.etcd.io/etcd/clientv3"
-	"go.etcd.io/etcd/clientv3/concurrency"
 )
 
 func init() {
@@ -31,50 +29,40 @@ var runNodeCmd = &cobra.Command{
 
 func runNodeCmdRun(cmd *cobra.Command, args []string) {
 
-	etcdAddres := getEtcdAddress()
-	cli, err := getEtcdClient(etcdAddres)
+	dbConnector := getDBConnector()
+	defer dbConnector.Close()
 
-	handleErrorWithPanic(err)
-	defer cli.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	//ctx, cancel := context.WithCancel(context.TODO())
-	defer cancel()
-
-	experimentVersionResp, err := cli.Get(ctx, ExperimentVersion)
+	experimentVersionBytes, err := dbConnector.Get(ExperimentVersion)
 	handleErrorWithPanic(err)
 
-	experimentVersion, _ := strconv.Atoi(string(experimentVersionResp.Kvs[0].Value))
+	experimentVersion, _ := strconv.Atoi(string(experimentVersionBytes))
 
-	numberOfNodesResp, err := cli.Get(ctx, ExperimentNumberOfNodes)
+	numberOfNodesBytes, err := dbConnector.Get(ExperimentNumberOfNodes)
 	handleErrorWithPanic(err)
 
-	numberOfNodes, _ := strconv.Atoi(string(numberOfNodesResp.Kvs[0].Value))
+	numberOfNodes, _ := strconv.Atoi(string(numberOfNodesBytes))
 
 	fmt.Println(fmt.Sprintf("experiment version: %d number of nodes: %d \n", experimentVersion, numberOfNodes))
 
-	session, _ := concurrency.NewSession(cli)
-	defer session.Close()
-
-	nodeID, mutexNodeFile, err := accuireLockOnNodeFile(numberOfNodes, session)
+	nodeID, mutexNodeFile, err := accuireLockOnNodeFile(numberOfNodes, dbConnector)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	zipFileName := downloadNodeFolder(cli, nodeID)
+	zipFileName := downloadNodeFolder(dbConnector, nodeID)
 	extractZipFile(zipFileName)
 
 	time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
 
-	mutexNodeList := accuireLockOnNodeList(session)
+	mutexNodeList := accuireLockOnNodeList(dbConnector)
 
-	nodeListResponse, err := cli.Get(ctx, ExperimentNodeList)
+	nodeListResponse, err := dbConnector.Get(ExperimentNodeList)
 	handleErrorWithPanic(err)
 
 	nodeList := ""
-	if len(nodeListResponse.Kvs) > 0 {
-		nodeList = string(nodeListResponse.Kvs[0].Value)
+	if nodeListResponse != nil {
+		nodeList = string(nodeListResponse)
 	}
 
 	IPAddress := GetOutboundIP().String()
@@ -88,16 +76,16 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 		nodeList = fmt.Sprintf("%s;%s", nodeList, nodeNetAddress)
 	}
 
-	_, err = cli.Put(ctx, ExperimentNodeList, nodeList)
+	err = dbConnector.Put(ExperimentNodeList, nodeList)
 	handleErrorWithPanic(err)
-	mutexNodeList.Unlock(context.TODO())
+	dbConnector.Unlock(mutexNodeList)
 
 	err = algorandCmd.Wait()
 	handleErrorWithPanic(err)
 
 	fmt.Println("Node started successfuly. Waiting for commands...")
 
-	waitForStopCommand(cli)
+	dbConnector.WatchPutEvents(ExperimentNodeCommandStop)
 	err = killAlgodProcess(nodeID)
 	if err != nil {
 		panic(err)
@@ -105,37 +93,37 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 
 	// Removes in use key
 	nodeFileInUseKey := fmt.Sprintf("%s/%d", ExperimentNodeFilesInUse, nodeID)
-	_, err = cli.Delete(context.TODO(), nodeFileInUseKey)
+	err = dbConnector.Delete(nodeFileInUseKey)
 	handleErrorWithPanic(err)
 
 	// Remove node information from node list
-	mutexNodeList = accuireLockOnNodeList(session)
+	mutexNodeList = accuireLockOnNodeList(dbConnector)
 
-	err = removeNodeInfoFromNodeList(nodeID, IPAddress, basePortNumber, session)
+	err = removeNodeInfoFromNodeList(nodeID, IPAddress, basePortNumber, dbConnector)
 	handleErrorWithPanic(err)
 
-	mutexNodeList.Unlock(context.TODO())
+	dbConnector.Unlock(mutexNodeList)
 
 	// Remove lock on node file
-	mutexNodeFile.Unlock(context.TODO())
+	dbConnector.Unlock(mutexNodeFile)
 
 	fmt.Println("Node stoped successfuly.")
 
 }
 
-func removeNodeInfoFromNodeList(nodeID int, IPAddress string, basePortNumber int, etcdSession *concurrency.Session) error {
+func removeNodeInfoFromNodeList(nodeID int, IPAddress string, basePortNumber int, dbConnector dbconnector.DBConnector) error {
 
 	netAddress := getNetAddress(nodeID, IPAddress, basePortNumber)
-	nodeListResp, err := etcdSession.Client().Get(context.TODO(), ExperimentNodeList)
+	nodeListResp, err := dbConnector.Get(ExperimentNodeList)
 	if err != nil {
 		return err
 	}
 
-	if len(nodeListResp.Kvs) == 0 {
-		return nil
+	if len(nodeListResp) == 0 {
+		return fmt.Errorf("Node lisy is already empty.")
 	}
 
-	nodeListString := string(nodeListResp.Kvs[0].Value)
+	nodeListString := string(nodeListResp)
 
 	fmt.Println("(BEF) Node list string:", nodeListString)
 
@@ -159,27 +147,12 @@ func removeNodeInfoFromNodeList(nodeID int, IPAddress string, basePortNumber int
 
 	fmt.Println("(AFT) Node list string:", nodeListString)
 
-	_, err = etcdSession.Client().Put(context.TODO(), ExperimentNodeList, nodeListString)
+	err = dbConnector.Put(ExperimentNodeList, nodeListString)
 	if err != nil {
 		return err
 	}
 
 	return nil
-}
-
-func waitForStopCommand(etcdClient *clientv3.Client) {
-
-	rch := etcdClient.Watch(context.Background(), ExperimentNodeCommandStop)
-	for wresp := range rch {
-		for _, ev := range wresp.Events {
-
-			if ev.Type == clientv3.EventTypePut {
-				return
-			}
-
-		}
-	}
-
 }
 
 func killAlgodProcess(nodeID int) error {
@@ -234,69 +207,58 @@ func extractZipFile(zipFile string) {
 
 }
 
-func downloadNodeFolder(etcdClient *clientv3.Client, nodeID int) string {
+func downloadNodeFolder(dbConnector dbconnector.DBConnector, nodeID int) string {
 
 	fileName := fmt.Sprintf("Node-%d.zip", nodeID)
 	keyName := fmt.Sprintf("%s/%s", ExperimentNodeFiles, fileName)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	zipFile, err := etcdClient.Get(ctx, keyName)
+	zipFileBytes, err := dbConnector.Get(keyName)
 	handleErrorWithPanic(err)
-
-	zipFileBytes := zipFile.Kvs[0].Value
 
 	err = ioutil.WriteFile(fmt.Sprintf("./%s", fileName), zipFileBytes, 0644)
 	handleErrorWithPanic(err)
 
 	nodeFileInUseKey := fmt.Sprintf("%s/%d", ExperimentNodeFilesInUse, nodeID)
-	_, err = etcdClient.Put(ctx, nodeFileInUseKey, "true")
+	err = dbConnector.Put(nodeFileInUseKey, "true")
 	handleErrorWithPanic(err)
 
 	return fileName
 }
 
-func accuireLockOnNodeFile(numberOfNodes int, etcdSession *concurrency.Session) (int, *concurrency.Mutex, error) {
+func accuireLockOnNodeFile(numberOfNodes int, dbConnector dbconnector.DBConnector) (int, string, error) {
 
 	var err error
 
 	for i := 0; i < numberOfNodes; i++ {
 		mutexName := fmt.Sprintf("%s%d", ExperimentNodeLockKeyPrefix, i)
-		mutex := concurrency.NewMutex(etcdSession, mutexName)
 
-		err = mutex.TryLock(context.TODO())
-		if err == concurrency.ErrLocked {
+		err = dbConnector.TryLock(mutexName)
+		if err != nil {
 			continue
 		}
 
-		if err != nil {
-			return 0, nil, err
-		}
-
 		nodeFileInUseKey := fmt.Sprintf("%s/%d", ExperimentNodeFilesInUse, i)
-		nodeFileInUseResponse, err := etcdSession.Client().Get(context.TODO(), nodeFileInUseKey)
+		nodeFileInUseBytes, err := dbConnector.Get(nodeFileInUseKey)
 		handleErrorWithPanic(err)
 
-		if nodeFileInUseResponse.Count != 0 {
-			err = mutex.Unlock(context.TODO())
+		if nodeFileInUseBytes != nil {
+			err = dbConnector.Unlock(mutexName)
 			handleErrorWithPanic(err)
 			continue
 		}
 
-		return i, mutex, nil
+		return i, mutexName, nil
 	}
 
-	return 0, nil, fmt.Errorf("Could not accuired lock. Did you run too many node?")
+	return 0, "", fmt.Errorf("Could not accuired lock. Did you run too many node?")
 }
 
-func accuireLockOnNodeList(etcdSession *concurrency.Session) *concurrency.Mutex {
+func accuireLockOnNodeList(dbConnector dbconnector.DBConnector) string {
 	mutexName := ExperimentNodeListLock
-	mutex := concurrency.NewMutex(etcdSession, mutexName)
-	//TODO: Handle error here!!!!
-	mutex.Lock(context.TODO())
+	err := dbConnector.Lock(mutexName)
+	handleErrorWithPanic(err)
 
-	return mutex
+	return mutexName
 }
 
 func startAlgorandProcess(nodeID int, IPAddress string, basePortNumber int, relayNodeList string) (*exec.Cmd, string) {
