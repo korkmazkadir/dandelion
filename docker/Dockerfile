@@ -1,17 +1,14 @@
 FROM algorand/testnet
 
-# installs unzip
+# installs unzip && cleans up apt cache && Removes default data folder
 RUN apt-get update && \
-    apt-get install -y unzip
+    apt-get install -y unzip && rm -rf /var/lib/apt/lists/* && rm -r /root/node/data/
+
 
 WORKDIR /root/node
 
-
 # Adds node folder to path to access algorand binaries
 ENV PATH="/root/node:${PATH}"
-
-# Removes data folder
-RUN rm -r ./data/
 
 
 # Dowloads dandelion and unzip it
