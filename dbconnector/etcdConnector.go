@@ -95,6 +95,11 @@ func (connector EtcdConnector) Delete(key string) error {
 	return err
 }
 
+func (connector EtcdConnector) DeleteWithPrefix(prefix string) error {
+	_, err := connector.cli.Delete(context.TODO(), prefix, clientv3.WithPrefix())
+	return err
+}
+
 func (connector EtcdConnector) Lock(name string) error {
 
 	mutex := concurrency.NewMutex(connector.session, name)

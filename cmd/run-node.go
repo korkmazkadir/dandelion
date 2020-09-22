@@ -16,6 +16,7 @@ import (
 )
 
 func init() {
+	runNodeCmd.PersistentFlags().StringVarP(&AppFlags.dataDirectory, "data-directory", "d", "./", "enclosing directory for node data")
 	rootCmd.AddCommand(runNodeCmd)
 }
 
@@ -197,7 +198,7 @@ func extractZipFile(zipFile string) {
 
 	unzipCmd := &exec.Cmd{
 		Path: unzipExecutable,
-		Args: []string{unzipExecutable, zipFile},
+		Args: []string{unzipExecutable, zipFile, "-d", getDataDirectory()},
 		//Stdout: os.Stdout,
 		Stderr: os.Stdout,
 	}
@@ -209,13 +210,15 @@ func extractZipFile(zipFile string) {
 
 func downloadNodeFolder(dbConnector dbconnector.DBConnector, nodeID int) string {
 
-	fileName := fmt.Sprintf("Node-%d.zip", nodeID)
-	keyName := fmt.Sprintf("%s/%s", ExperimentNodeFiles, fileName)
+	directory := getDataDirectory()
+
+	fileName := fmt.Sprintf("%sNode-%d.zip", directory, nodeID)
+	keyName := fmt.Sprintf("%s/%s", ExperimentNodeFiles, fmt.Sprintf("Node-%d.zip", nodeID))
 
 	zipFileBytes, err := dbConnector.Get(keyName)
 	handleErrorWithPanic(err)
 
-	err = ioutil.WriteFile(fmt.Sprintf("./%s", fileName), zipFileBytes, 0644)
+	err = ioutil.WriteFile(fmt.Sprintf("%s", fileName), zipFileBytes, 0644)
 	handleErrorWithPanic(err)
 
 	nodeFileInUseKey := fmt.Sprintf("%s/%d", ExperimentNodeFilesInUse, nodeID)
@@ -270,7 +273,8 @@ func startAlgorandProcess(nodeID int, IPAddress string, basePortNumber int, rela
 
 	//goal node start -d data -p "ipaddress-1:4161;ipaddress-2:4161"
 
-	dataFolderName := fmt.Sprintf("Node-%d", nodeID)
+	directory := getDataDirectory()
+	dataFolderName := fmt.Sprintf("%sNode-%d", directory, nodeID)
 
 	nodeNetAddress := configureNodeNetAddress(dataFolderName, nodeID, IPAddress, basePortNumber)
 

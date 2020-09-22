@@ -1,6 +1,7 @@
 package dbconnector
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -76,6 +77,89 @@ func TestPutDeleteGet(t *testing.T) {
 	err = connector.Close()
 	if err != nil {
 		t.Errorf("close error: %s", err)
+	}
+
+}
+
+func TestDeleteWithPrefic(t *testing.T) {
+
+	connector, err := CreateEtcdConnector("127.0.0.1:2379")
+	if err != nil {
+		t.Errorf("Error:%s", err)
+		return
+	}
+
+	prefix := "/hello"
+
+	key1 := fmt.Sprintf("%s/key-one", prefix)
+	key2 := fmt.Sprintf("%s/key-two", prefix)
+
+	value1 := "value-to-delete-1"
+	value2 := "value-to-delete-2"
+
+	err = connector.Put(key1, value1)
+	if err != nil {
+		t.Errorf("Error:%s", err)
+		return
+	}
+
+	err = connector.Put(key2, value2)
+	if err != nil {
+		t.Errorf("Error:%s", err)
+		return
+	}
+
+	value, err := connector.Get(key1)
+	if err != nil {
+		t.Errorf("Get Error:%s", err)
+	}
+
+	valueString := string(value)
+
+	if valueString != value1 {
+		t.Errorf("Error: expecting %s received %s", value1, valueString)
+		return
+	}
+
+	value, err = connector.Get(key2)
+	if err != nil {
+		t.Errorf("Get Error:%s", err)
+	}
+
+	valueString = string(value)
+
+	if valueString != value2 {
+		t.Errorf("Error: expecting %s received %s", value2, valueString)
+		return
+	}
+
+	err = connector.DeleteWithPrefix(prefix)
+	if err != nil {
+		t.Errorf("Delete with prefix Error:%s", err)
+	}
+
+	value, err = connector.Get(key1)
+	if err != nil {
+		t.Errorf("Get Error:%s", err)
+	}
+
+	valueString = string(value)
+
+	if valueString != "" {
+		t.Errorf("Error: expecting %s received %s", "", valueString)
+		return
+	}
+
+	value, err = connector.Get(key2)
+	if err != nil {
+		t.Errorf("Get Error:%s", err)
+	}
+
+	valueString = string(value)
+
+	if valueString != "" {
+		t.Errorf("Error: expecting %s received %s", "", valueString)
+		return
 	}
 
 }

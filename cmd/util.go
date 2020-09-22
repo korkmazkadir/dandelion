@@ -25,6 +25,10 @@ func getEtcdAddress() string {
 	return etcdAddres
 }
 
+func getDataDirectory() string {
+	return AppFlags.dataDirectory
+}
+
 func getEtcdClient(etcdAddress string) (*clientv3.Client, error) {
 
 	cli, err := clientv3.New(clientv3.Config{

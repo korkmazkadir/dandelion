@@ -8,13 +8,14 @@ import (
 )
 
 type applicationFlags struct {
-	etcdAddress string
+	etcdAddress   string
+	dataDirectory string
 }
 
 var AppFlags applicationFlags
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&AppFlags.etcdAddress, "etcdt-address", "e", "", "inet address of etcd keyvalue store(default value is 127.0.0.1:2379)")
+	rootCmd.PersistentFlags().StringVarP(&AppFlags.etcdAddress, "etcdt-address", "e", "127.0.0.1:2379", "inet address of etcd keyvalue store")
 }
 
 var rootCmd = &cobra.Command{

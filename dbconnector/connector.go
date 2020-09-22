@@ -7,6 +7,7 @@ type DBConnector interface {
 	GetWithPrefix(prefix string) ([][]byte, error)
 	Put(key string, value string) error
 	Delete(key string) error
+	DeleteWithPrefix(prefix string) error
 
 	Lock(name string) error
 	TryLock(name string) error
