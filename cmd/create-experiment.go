@@ -52,6 +52,7 @@ func createExperimentCmdValidateArgs(cmd *cobra.Command, args []string) error {
 func createExperimentCmdRun(cmd *cobra.Command, args []string) {
 
 	dbConnector := getDBConnector()
+	defer dbConnector.Close()
 
 	response, err := dbConnector.GetWithPrefix(ExperimentKeyPrefix)
 	if err != nil {
