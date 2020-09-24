@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"../dbconnector"
+	"github.com/algorand/go-algorand-sdk/crypto"
 	"github.com/spf13/cobra"
 )
 
@@ -360,4 +361,75 @@ func writeNodeConfig(dataFolderName string, config nodeConfig) {
 	err = ioutil.WriteFile(configFileName, byteValue, 0666)
 	handleErrorWithPanic(err)
 
+}
+
+/*****************************************************/
+
+func createAlgorandAccountAddFound(nodeID int, dbConnector dbconnector.DBConnector) error {
+
+	account := crypto.GenerateAccount()
+	err := addFound(nodeID, account)
+	if err != nil {
+		return fmt.Errorf("Error: could not add found to account. Error message is %s", err)
+	}
+
+	return nil
+}
+
+func addFound(nodeID int, account crypto.Account) error {
+
+	goalExecutable, err := exec.LookPath("goal")
+	if err != nil {
+		return fmt.Errorf("Error: could not find goal in path %s", err)
+	}
+
+	//$ goal clerk send --from=<my-account> --to=GD64YIY3TWGDMCNPP553DZPPR6LDUSFQOIJVFDPPXWEG3FVOJCCDBBHU5A --fee=1000 --amount=1000000 --note="Hello World"
+
+	directory := getDataDirectory()
+	dataFolderName := fmt.Sprintf("%sNode-%d", directory, nodeID)
+
+	from := fmt.Sprintf("--from=%s", "")
+	to := fmt.Sprintf("--to=%s", account.Address)
+	fee := fmt.Sprintf("--fee=%d", 1000)
+	amount := fmt.Sprintf("--amount=%d", 1)
+	note := fmt.Sprintf("--note=%s", "Initial founding.")
+
+	algorandCmd := &exec.Cmd{
+		Path: goalExecutable,
+		Args: []string{goalExecutable, "clerk", "send", "-d", dataFolderName, from, to, fee, amount, note},
+	}
+
+	//err = algorandCmd.Start or run
+
+	return err
+}
+
+func getCurrentAccountAddress(nodeID int) (string, error) {
+
+	goalExecutable, err := exec.LookPath("goal")
+	if err != nil {
+		return "", fmt.Errorf("Error: could not find goal in path %s", err)
+	}
+
+	//kadir@rita:~/Git/dandelion/my-network-16$ goal account -d Node-0 list
+	//[n/a]	HISKEQ3DCHFARLYKGTNTVWXAIGGBIO2MS7ZIODEV7OIIFYWAJM5XS36HXM	HISKEQ3DCHFARLYKGTNTVWXAIGGBIO2MS7ZIODEV7OIIFYWAJM5XS36HXM	[n/a] microAlgos
+
+	directory := getDataDirectory()
+	dataFolderName := fmt.Sprintf("%sNode-%d", directory, nodeID)
+
+	algorandCmd := &exec.Cmd{
+		Path: goalExecutable,
+		Args: []string{goalExecutable, "account", "list", "-d", dataFolderName},
+	}
+
+	err = algorandCmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("Error: could not run goal account list. %s", err)
+	}
+
+	//algorandCmd.Run wait for it
+	result := ""
+	//b, _ := ioutil.ReadAll(algorandCmd.StdoutPipe)
+
+	return result, nil
 }
