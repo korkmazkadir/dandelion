@@ -19,3 +19,5 @@ var ExperimentNodeList = "/experiment/node-list"
 var ExperimentNodeListLock = "/experiment/locks/node-list"
 
 var ExperimentNodeCommandStop = "/experiment/command/stop-all"
+
+var ExperimentAccountPrefix = "/experiment/accounts"

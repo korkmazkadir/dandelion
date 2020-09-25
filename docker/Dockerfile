@@ -12,7 +12,7 @@ ENV PATH="/root/node:${PATH}"
 
 
 # Dowloads dandelion and unzip it
-RUN curl --location --remote-header-name --remote-name https://github.com/korkmazkadir/dandelion/releases/download/v1.0.0-beta/dandelion_linux-amd64.zip \
+RUN curl --location --remote-header-name --remote-name https://github.com/korkmazkadir/dandelion/releases/download/v0.0.1-beta/dandelion_linux-amd64.zip \
 && unzip dandelion_linux-amd64.zip \
 && rm dandelion_linux-amd64.zip
 

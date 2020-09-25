@@ -1,9 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
-	"github.com/algorand/go-algorand-sdk/crypto"
+	"../dbconnector"
 	"github.com/spf13/cobra"
 )
 
@@ -20,52 +21,33 @@ var createTransactionCmd = &cobra.Command{
 
 func createTransactionCmdRun(cmd *cobra.Command, args []string) {
 
-	createAlgorandAccount()
-}
+	dbConnector := getDBConnector()
+	defer dbConnector.Close()
 
-/**********************************************/
-
-func createAlgorandAccount() {
-
-	fmt.Println("------------Creating algorand accounts-----")
-	account := crypto.GenerateAccount()
-
-	fmt.Println("Private Key: ", account.PrivateKey)
-	fmt.Println("Publick Key: ", account.PublicKey)
-	fmt.Println("Account Add: ", account.Address)
+	getAlgorandAccountsFromDB(dbConnector)
 
 }
 
-/*
-func getAccountAddressesFromGenesisFile(networkFolder string) []string, error {
+//Algorand example: https://github.com/algorand/docs/blob/master/examples/start_building/v2/go/yourFirstTransaction.go
 
+func getAlgorandAccountsFromDB(dbConnector dbconnector.DBConnector) ([]AlgorandAccount, error) {
 
+	accountData, err := dbConnector.GetWithPrefix(ExperimentAccountPrefix)
+	if err != nil {
+		panic(fmt.Errorf("Error occured during getting accounts from DB: %s", err))
+	}
+
+	var accounts []AlgorandAccount
+
+	for _, accountJSON := range accountData {
+		var algorandAccount AlgorandAccount
+		json.Unmarshal(accountJSON, &algorandAccount)
+		accounts = append(accounts, algorandAccount)
+	}
+
+	fmt.Println(accounts)
 
 	return nil, nil
 }
-*/
 
 /**********************************************/
-
-type TransactionBody struct {
-	amt  int
-	fee  int
-	fv   int
-	gen  string
-	gh   string
-	lv   int
-	note string
-	rcv  string
-	snd  string
-	typ  string `json:"type"`
-}
-
-type AlgorandTransaction struct {
-	txn TransactionBody
-}
-
-/*
-func createTransaction(numberOfTransactions int, accountAddresses []string) []AlgorandTransaction {
-
-}
-*/

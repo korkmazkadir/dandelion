@@ -87,6 +87,11 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 
 	fmt.Println("Node started successfuly. Waiting for commands...")
 
+	err = createAlgorandAccountAddFound(nodeID, dbConnector)
+	if err != nil {
+		fmt.Println("Create account add found error is ", err)
+	}
+
 	dbConnector.WatchPutEvents(ExperimentNodeCommandStop)
 	err = killAlgodProcess(nodeID)
 	if err != nil {
@@ -304,9 +309,14 @@ func startAlgorandProcess(nodeID int, IPAddress string, basePortNumber int, rela
 }
 
 func configureNodeNetAddress(dataFolderName string, nodeID int, IPAddress string, basePortNumber int) string {
+
 	netAddress := getNetAddress(nodeID, IPAddress, basePortNumber)
+	endPointAddress := getEndpointAddress(nodeID, IPAddress, basePortNumber)
+
 	nodeConfig := getNodeConfig(dataFolderName)
+
 	nodeConfig.NetAddress = netAddress
+	nodeConfig.EndpointAddress = endPointAddress
 
 	writeNodeConfig(dataFolderName, nodeConfig)
 
@@ -315,6 +325,10 @@ func configureNodeNetAddress(dataFolderName string, nodeID int, IPAddress string
 
 func getNetAddress(nodeID int, IPAddress string, basePortNumber int) string {
 	return fmt.Sprintf("%s:%d", IPAddress, basePortNumber+nodeID)
+}
+
+func getEndpointAddress(nodeID int, IPAddress string, basePortNumber int) string {
+	return fmt.Sprintf("%s:%d", IPAddress, basePortNumber+nodeID+5000)
 }
 
 /*********************************************************************************************************************/
@@ -368,12 +382,46 @@ func writeNodeConfig(dataFolderName string, config nodeConfig) {
 func createAlgorandAccountAddFound(nodeID int, dbConnector dbconnector.DBConnector) error {
 
 	account := crypto.GenerateAccount()
+
+	fmt.Println("Account Address: ", account.Address)
+	fmt.Println("Account Public KEY: ", string(account.PublicKey))
+	fmt.Println("Account Private KEY: ", string(account.PrivateKey))
+
 	err := addFound(nodeID, account)
 	if err != nil {
 		return fmt.Errorf("Error: could not add found to account. Error message is %s", err)
 	}
 
+	fmt.Println("Found added to account successfuly :)")
+
+	err = saveAccountInfoToDB(nodeID, dbConnector, account)
+	if err != nil {
+		return fmt.Errorf("Could notsave account info to db %s", err)
+	}
+
 	return nil
+}
+
+type AlgorandAccount struct {
+	Address    string
+	PublicKey  []byte
+	PrivateKey []byte
+}
+
+func saveAccountInfoToDB(nodeID int, dbConnector dbconnector.DBConnector, account crypto.Account) error {
+
+	algorandAccount := AlgorandAccount{
+		Address:    account.Address.String(),
+		PublicKey:  account.PublicKey,
+		PrivateKey: account.PrivateKey}
+
+	algorandAccountJSON, _ := json.Marshal(algorandAccount)
+
+	accountKey := fmt.Sprintf("%s/%d", ExperimentAccountPrefix, nodeID)
+
+	err := dbConnector.Put(accountKey, string(algorandAccountJSON))
+
+	return err
 }
 
 func addFound(nodeID int, account crypto.Account) error {
@@ -388,27 +436,38 @@ func addFound(nodeID int, account crypto.Account) error {
 	directory := getDataDirectory()
 	dataFolderName := fmt.Sprintf("%sNode-%d", directory, nodeID)
 
-	from := fmt.Sprintf("--from=%s", "")
+	walletAddress, err := getWalletAddress(nodeID)
+	if err != nil {
+		return err
+	}
+
+	from := fmt.Sprintf("--from=%s", walletAddress)
 	to := fmt.Sprintf("--to=%s", account.Address)
 	fee := fmt.Sprintf("--fee=%d", 1000)
-	amount := fmt.Sprintf("--amount=%d", 1)
-	note := fmt.Sprintf("--note=%s", "Initial founding.")
+	amount := fmt.Sprintf("--amount=%d", 1000000000000)
+	note := fmt.Sprintf("--note=%s", "\"Initial founding.\"")
 
 	algorandCmd := &exec.Cmd{
 		Path: goalExecutable,
-		Args: []string{goalExecutable, "clerk", "send", "-d", dataFolderName, from, to, fee, amount, note},
+		Args: []string{goalExecutable, "clerk", "send", "-d", dataFolderName, from, to, fee, amount, note, "-N"},
 	}
 
-	//err = algorandCmd.Start or run
+	fmt.Println("Command is: ", algorandCmd.String())
 
-	return err
+	err = algorandCmd.Start()
+	if err != nil {
+		return err
+	}
+
+	return algorandCmd.Wait()
 }
 
-func getCurrentAccountAddress(nodeID int) (string, error) {
+func getWalletAddress(nodeID int) (string, error) {
 
+	walletAddress := ""
 	goalExecutable, err := exec.LookPath("goal")
 	if err != nil {
-		return "", fmt.Errorf("Error: could not find goal in path %s", err)
+		return walletAddress, fmt.Errorf("Error: could not find goal in path %s", err)
 	}
 
 	//kadir@rita:~/Git/dandelion/my-network-16$ goal account -d Node-0 list
@@ -422,14 +481,23 @@ func getCurrentAccountAddress(nodeID int) (string, error) {
 		Args: []string{goalExecutable, "account", "list", "-d", dataFolderName},
 	}
 
-	err = algorandCmd.Run()
+	commandOutput, err := algorandCmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("Error: could not run goal account list. %s", err)
+		return walletAddress, err
 	}
 
-	//algorandCmd.Run wait for it
-	result := ""
-	//b, _ := ioutil.ReadAll(algorandCmd.StdoutPipe)
+	commandResult := string(commandOutput)
+	fmt.Println("Goal account list command output: ", commandResult)
 
-	return result, nil
+	walletAddressTokens := strings.Split(string(commandResult), "\t")
+
+	if len(walletAddressTokens) == 5 {
+		return walletAddress, fmt.Errorf("Expecting 3 tokens but received %d", len(walletAddressTokens))
+	}
+
+	walletAddress = walletAddressTokens[1]
+
+	fmt.Println(fmt.Sprintf("Goal account list result ready: %s Wallet address: %s ", commandResult, walletAddress))
+
+	return walletAddress, nil
 }
