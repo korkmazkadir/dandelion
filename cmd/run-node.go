@@ -70,7 +70,7 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 	IPAddress := GetOutboundIP().String()
 	basePortNumber := 9373
 
-	algorandCmd, nodeNetAddress := startAlgorandProcess(nodeID, IPAddress, basePortNumber, nodeList)
+	algorandCmd, nodeNetAddress, nodeEndpointAddress := startAlgorandProcess(nodeID, IPAddress, basePortNumber, nodeList)
 
 	if nodeList == "" {
 		nodeList = nodeNetAddress
@@ -91,6 +91,8 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fmt.Println("Create account add found error is ", err)
 	}
+
+	saveEndpointAddressAndAlgodTokenToDB(nodeID, nodeEndpointAddress, dbConnector)
 
 	dbConnector.WatchPutEvents(ExperimentNodeCommandStop)
 	err = killAlgodProcess(nodeID)
@@ -127,7 +129,7 @@ func removeNodeInfoFromNodeList(nodeID int, IPAddress string, basePortNumber int
 	}
 
 	if len(nodeListResp) == 0 {
-		return fmt.Errorf("Node lisy is already empty.")
+		return fmt.Errorf("node lisy is already empty")
 	}
 
 	nodeListString := string(nodeListResp)
@@ -270,7 +272,7 @@ func accuireLockOnNodeList(dbConnector dbconnector.DBConnector) string {
 	return mutexName
 }
 
-func startAlgorandProcess(nodeID int, IPAddress string, basePortNumber int, relayNodeList string) (*exec.Cmd, string) {
+func startAlgorandProcess(nodeID int, IPAddress string, basePortNumber int, relayNodeList string) (*exec.Cmd, string, string) {
 
 	goalExecutable, err := exec.LookPath("goal")
 	if err != nil {
@@ -282,7 +284,7 @@ func startAlgorandProcess(nodeID int, IPAddress string, basePortNumber int, rela
 	directory := getDataDirectory()
 	dataFolderName := fmt.Sprintf("%sNode-%d", directory, nodeID)
 
-	nodeNetAddress := configureNodeNetAddress(dataFolderName, nodeID, IPAddress, basePortNumber)
+	nodeNetAddress, nodeEndpointAddress := configureNodeNetAndEndPointAddress(dataFolderName, nodeID, IPAddress, basePortNumber)
 
 	var args []string
 	if len(relayNodeList) > 0 {
@@ -305,10 +307,10 @@ func startAlgorandProcess(nodeID int, IPAddress string, basePortNumber int, rela
 		panic(fmt.Errorf("Error: could not start an algorand process"))
 	}
 
-	return algorandCmd, nodeNetAddress
+	return algorandCmd, nodeNetAddress, nodeEndpointAddress
 }
 
-func configureNodeNetAddress(dataFolderName string, nodeID int, IPAddress string, basePortNumber int) string {
+func configureNodeNetAndEndPointAddress(dataFolderName string, nodeID int, IPAddress string, basePortNumber int) (string, string) {
 
 	netAddress := getNetAddress(nodeID, IPAddress, basePortNumber)
 	endPointAddress := getEndpointAddress(nodeID, IPAddress, basePortNumber)
@@ -320,7 +322,7 @@ func configureNodeNetAddress(dataFolderName string, nodeID int, IPAddress string
 
 	writeNodeConfig(dataFolderName, nodeConfig)
 
-	return netAddress
+	return netAddress, endPointAddress
 }
 
 func getNetAddress(nodeID int, IPAddress string, basePortNumber int) string {
@@ -400,12 +402,6 @@ func createAlgorandAccountAddFound(nodeID int, dbConnector dbconnector.DBConnect
 	}
 
 	return nil
-}
-
-type AlgorandAccount struct {
-	Address    string
-	PublicKey  []byte
-	PrivateKey []byte
 }
 
 func saveAccountInfoToDB(nodeID int, dbConnector dbconnector.DBConnector, account crypto.Account) error {
@@ -500,4 +496,26 @@ func getWalletAddress(nodeID int) (string, error) {
 	fmt.Println(fmt.Sprintf("Goal account list result ready: %s Wallet address: %s ", commandResult, walletAddress))
 
 	return walletAddress, nil
+}
+
+/***************************************************/
+
+func saveEndpointAddressAndAlgodTokenToDB(nodeID int, endPointAddress string, dbConnector dbconnector.DBConnector) {
+
+	directory := getDataDirectory()
+	dataFolderName := fmt.Sprintf("%sNode-%d", directory, nodeID)
+
+	//Get token from file
+	algodTokenFile := fmt.Sprintf("%s/algod.token", dataFolderName)
+	algodTokenBytes, err := ioutil.ReadFile(algodTokenFile)
+
+	algodInfo := AlgodInfo{EndPointAddress: endPointAddress, Token: string(algodTokenBytes)}
+
+	algodInfoKey := fmt.Sprintf("%s/%d", ExperimentAlgodInfoPrefix, nodeID)
+	algodInfoJSON, _ := json.Marshal(algodInfo)
+
+	err = dbConnector.Put(algodInfoKey, string(algodInfoJSON))
+	if err != nil {
+		panic(fmt.Errorf("Could not put algod info to db. Error: %s", err))
+	}
 }

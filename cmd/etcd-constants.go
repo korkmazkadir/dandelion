@@ -21,3 +21,5 @@ var ExperimentNodeListLock = "/experiment/locks/node-list"
 var ExperimentNodeCommandStop = "/experiment/command/stop-all"
 
 var ExperimentAccountPrefix = "/experiment/accounts"
+
+var ExperimentAlgodInfoPrefix = "/experiment/algod-info"
