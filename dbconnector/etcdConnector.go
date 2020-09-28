@@ -77,7 +77,7 @@ func (connector EtcdConnector) GetWithPrefix(prefix string) ([][]byte, error) {
 
 	results := make([][]byte, len(resp.Kvs))
 	for i := 0; i < len(resp.Kvs); i++ {
-		results[i] = resp.Kvs[0].Value
+		results[i] = resp.Kvs[i].Value
 	}
 
 	return results, nil
