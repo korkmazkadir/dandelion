@@ -319,6 +319,8 @@ func configureNodeNetAndEndPointAddress(dataFolderName string, nodeID int, IPAdd
 
 	nodeConfig.NetAddress = netAddress
 	nodeConfig.EndpointAddress = endPointAddress
+	nodeConfig.TxPoolExponentialIncreaseFactor = 1
+	nodeConfig.TxPoolSize = 1000000
 
 	writeNodeConfig(dataFolderName, nodeConfig)
 
@@ -336,11 +338,13 @@ func getEndpointAddress(nodeID int, IPAddress string, basePortNumber int) string
 /*********************************************************************************************************************/
 
 type nodeConfig struct {
-	GossipFanout    int
-	EndpointAddress string
-	DNSBootstrapID  string
-	EnableProfiler  bool
-	NetAddress      string
+	GossipFanout                    int
+	EndpointAddress                 string
+	DNSBootstrapID                  string
+	EnableProfiler                  bool
+	NetAddress                      string
+	TxPoolExponentialIncreaseFactor int
+	TxPoolSize                      int
 }
 
 func getConfigFileName(dataFolderName string) string {

@@ -146,7 +146,11 @@ func createSignedTransactions(numberOfTransactions int, sizeOfNoteInBytes int, a
 		}
 
 		var amount uint64 = 1
-		var minFee uint64 = 1000
+
+		//236 is the size of a transaction without any note. 7 is 7
+
+		var minFee uint64 = 8 * uint64(sizeOfNoteInBytes+236+7)
+		//var minFee uint64 = 10000
 
 		note := make([]byte, sizeOfNoteInBytes)
 		_, err = seededRandom.Read(note)
@@ -180,15 +184,15 @@ func createSignedTransactions(numberOfTransactions int, sizeOfNoteInBytes int, a
 
 func submitTransactions(signedTransactions []AlgorandSignedTransaction, algodClient *algod.Client) {
 
-	for _, signedTX := range signedTransactions {
+	for index, signedTX := range signedTransactions {
 
-		fmt.Println("Submitting transaction: ", signedTX.id)
+		fmt.Printf("[%d]Submitting transaction: %s\n", index, signedTX.id)
 
 		sendResponse, err := algodClient.SendRawTransaction(signedTX.tx).Do(context.Background())
 		if err != nil {
 			panic(fmt.Errorf("failed to send transaction: %s", err))
 		}
-		fmt.Printf("Transaction successfully submitted: %s size: %d bytes\n", sendResponse, len(signedTX.tx))
+		fmt.Printf("[%d]Transaction successfully submitted: %s size: %d bytes\n", index, sendResponse, len(signedTX.tx))
 
 	}
 
