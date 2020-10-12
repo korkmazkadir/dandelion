@@ -15,3 +15,14 @@ type AlgorandSignedTransaction struct {
 	id string
 	tx []byte
 }
+
+type TransactionProcessingStats struct {
+	//transaction id
+	txID string
+	//transaction issued
+	startTime int64
+	//block timestamp
+	endTime int64
+	//round index
+	blockIndex int
+}

@@ -64,6 +64,7 @@ func createTransactionCmdRun(cmd *cobra.Command, args []string) {
 
 	signedTransactions := createSignedTransactions(numberOfTransactions, sizeOfNoteInBytes, accounts, algodClient)
 	submitTransactions(signedTransactions, algodClient)
+	waitForTransactions(algodClient)
 
 }
 
@@ -182,7 +183,9 @@ func createSignedTransactions(numberOfTransactions int, sizeOfNoteInBytes int, a
 	return signedTransactions
 }
 
-func submitTransactions(signedTransactions []AlgorandSignedTransaction, algodClient *algod.Client) {
+func submitTransactions(signedTransactions []AlgorandSignedTransaction, algodClient *algod.Client) map[string]TransactionProcessingStats {
+
+	statMap := make(map[string]TransactionProcessingStats)
 
 	for index, signedTX := range signedTransactions {
 
@@ -192,8 +195,50 @@ func submitTransactions(signedTransactions []AlgorandSignedTransaction, algodCli
 		if err != nil {
 			panic(fmt.Errorf("failed to send transaction: %s", err))
 		}
+
 		fmt.Printf("[%d]Transaction successfully submitted: %s size: %d bytes\n", index, sendResponse, len(signedTX.tx))
 
+		txStat := TransactionProcessingStats{txID: signedTX.id, startTime: time.Now().Unix()}
+		statMap[txStat.txID] = txStat
+	}
+
+	return statMap
+}
+
+func waitForTransactions(algodClient *algod.Client) {
+
+	fmt.Println("Waiting for transactions....")
+
+	roundIndex := uint64(0)
+	for {
+
+		_, err := algodClient.StatusAfterBlock(roundIndex).Do(context.Background())
+		if err != nil {
+			panic(err)
+		}
+
+		block, err := algodClient.Block(roundIndex).Do(context.Background())
+		if err != nil {
+			panic(err)
+		}
+
+		/*
+			blockJSON, err := json.MarshalIndent(block, "", "\t")
+			if err != nil {
+				fmt.Printf("Can not marshall block data: %s\n", err)
+			}
+			fmt.Printf("%s\n", blockJSON)*/
+
+		for _, tx := range block.Payset {
+			fmt.Printf("[%d]Signed txn: %s \n", roundIndex, crypto.TransactionIDString(tx.SignedTxn.Txn))
+
+			blockJSON, _ := json.Marshal(tx.SignedTxn.Txn)
+			fmt.Printf("%s\n", blockJSON)
+
+			//return
+		}
+
+		roundIndex++
 	}
 
 }
