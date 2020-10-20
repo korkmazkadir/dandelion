@@ -491,8 +491,9 @@ func getWalletAddress(nodeID int) (string, error) {
 
 	walletAddressTokens := strings.Split(string(commandResult), "\t")
 
-	if len(walletAddressTokens) == 5 {
-		return walletAddress, fmt.Errorf("Expecting 3 tokens but received %d", len(walletAddressTokens))
+	if len(walletAddressTokens) != 4 {
+		fmt.Println("Goal account list: ", commandResult)
+		return walletAddress, fmt.Errorf("Expecting 4 tokens but received %d", len(walletAddressTokens))
 	}
 
 	walletAddress = walletAddressTokens[1]

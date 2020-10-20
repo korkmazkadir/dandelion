@@ -6,4 +6,4 @@ docker rm $(docker ps -a -q)
 
 docker rmi algorand-dandelion:latest
 
-docker build -t algorand-dandelion:latest -f ./docker/Dockerfile .
+docker build -t algorand-dandelion:latest -f ./docker/Dockerfile ./docker/
