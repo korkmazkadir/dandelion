@@ -2,7 +2,7 @@ FROM algorand/testnet
 
 # installs unzip && cleans up apt cache && Removes default data folder
 RUN apt-get update && \
-    apt-get install -y unzip && rm -rf /var/lib/apt/lists/* && rm -r /root/node/data/
+    apt-get install -y unzip && apt-get install -y  iproute2  && rm -rf /var/lib/apt/lists/* && rm -r /root/node/data/
 
 
 WORKDIR /root/node
@@ -15,6 +15,7 @@ ENV PATH="/root/node:${PATH}"
 #RUN curl --location --remote-header-name --remote-name https://github.com/korkmazkadir/dandelion/releases/download/v0.0.1-beta/dandelion_linux-amd64.zip \
 #&& unzip dandelion_linux-amd64.zip \
 #&& rm dandelion_linux-amd64.zip
+
 
 COPY  dandelion algod /root/node/
 
