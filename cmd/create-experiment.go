@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,40 +12,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var TCDelay int
+var MaxBlockSize int
+
 func init() {
 	rootCmd.AddCommand(createExperimentCmd)
+	createExperimentCmd.Flags().IntVar(&TCDelay, "tc-delay", 0, "Specifies nodes outgoing communication delay in milliseconds")
+	createExperimentCmd.Flags().IntVar(&MaxBlockSize, "block-payload-size", 1000000, "Specifies the maximum block size in bytes")
 }
 
 var createExperimentCmd = &cobra.Command{
-	Use:   "create-experiment [network folder path] [experiment version] [number of nodes]",
+	Use:   "create-experiment [network folder path] [number of nodes]",
 	Short: "Creates a new experiment on etcd and uploads data folders for nodes.",
-	Args:  createExperimentCmdValidateArgs,
+	Args:  cobra.MinimumNArgs(2),
 	Run:   createExperimentCmdRun,
-}
-
-func createExperimentCmdValidateArgs(cmd *cobra.Command, args []string) error {
-
-	if len(args) < 3 {
-		return errors.New("requires at least 3 arguments: [network folder path] [experiment version] [number of nodes]")
-	}
-
-	networkFolder := args[0]
-	_, err := os.Stat(networkFolder)
-	if os.IsNotExist(err) {
-		return fmt.Errorf("Error: Network folder does not exist: %s", networkFolder)
-	}
-
-	_, err = strconv.Atoi(args[1])
-	if err != nil {
-		return fmt.Errorf("Error: experiment version must be an integer: %s", args[1])
-	}
-
-	_, err = strconv.Atoi(args[2])
-	if err != nil {
-		return fmt.Errorf("Error: number of nodes version must be an integer: %s", args[2])
-	}
-
-	return nil
 }
 
 func createExperimentCmdRun(cmd *cobra.Command, args []string) {
@@ -65,13 +44,15 @@ func createExperimentCmdRun(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	experimentVersion := args[1]
-	numberOfNodes := args[2]
-
-	err = dbConnector.Put(ExperimentVersion, experimentVersion)
-	handleErrorWithPanic(err)
+	numberOfNodes := args[1]
 
 	err = dbConnector.Put(ExperimentNumberOfNodes, numberOfNodes)
+	handleErrorWithPanic(err)
+
+	err = dbConnector.Put(ExperimentMaxBlockSize, strconv.Itoa(MaxBlockSize))
+	handleErrorWithPanic(err)
+
+	err = dbConnector.Put(ExperimentNetworkDelay, strconv.Itoa(TCDelay))
 	handleErrorWithPanic(err)
 
 	networkFolderPath := args[0]
