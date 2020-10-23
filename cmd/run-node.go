@@ -94,6 +94,8 @@ func runNodeCmdRun(cmd *cobra.Command, args []string) {
 
 	saveEndpointAddressAndAlgodTokenToDB(nodeID, nodeEndpointAddress, dbConnector)
 
+	setTCRules(dbConnector)
+
 	dbConnector.WatchPutEvents(ExperimentNodeCommandStop)
 	err = killAlgodProcess(nodeID)
 	if err != nil {
@@ -501,6 +503,60 @@ func getWalletAddress(nodeID int) (string, error) {
 	fmt.Println(fmt.Sprintf("Goal account list result ready: %s Wallet address: %s ", commandResult, walletAddress))
 
 	return walletAddress, nil
+}
+
+func setTCRules(dbConnector dbconnector.DBConnector) {
+
+	bandwidthBytes, err := dbConnector.Get(ExperimentNetworkBandwidth)
+	if err != nil {
+		panic(err)
+	}
+
+	delayBytes, err := dbConnector.Get(ExperimentNetworkDelay)
+	if err != nil {
+		panic(err)
+	}
+
+	if len(bandwidthBytes) == 0 && len(delayBytes) == 0 {
+		return
+	}
+
+	bandwidth := string(bandwidthBytes)
+	delay := string(delayBytes)
+
+	tcSetExecutable, err := exec.LookPath("tcset")
+	if err != nil {
+		panic(fmt.Errorf("Error: could not find tcset in path"))
+	}
+
+	args1 := strings.Fields(fmt.Sprintf("eth0 --rate %sMbps --direction incoming", bandwidth))
+	args1 = append([]string{tcSetExecutable}, args1...)
+
+	tcSetIncommingCmd := &exec.Cmd{
+		Path:   tcSetExecutable,
+		Args:   args1,
+		Stderr: os.Stdout,
+	}
+
+	err = tcSetIncommingCmd.Run()
+	if err != nil {
+		panic(fmt.Errorf("tcset incomming error: %s", err))
+	}
+
+	args2 := strings.Fields(fmt.Sprintf("eth0 --rate %sMbps --delay %sms --direction outgoing", bandwidth, delay))
+	args2 = append([]string{tcSetExecutable}, args2...)
+
+	tcSetOutgoingCmd := &exec.Cmd{
+		Path:   tcSetExecutable,
+		Args:   args2,
+		Stderr: os.Stdout,
+	}
+
+	err = tcSetOutgoingCmd.Run()
+	if err != nil {
+		panic(fmt.Errorf("tcset outgoing error: %s", err))
+	}
+
 }
 
 /***************************************************/

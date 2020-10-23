@@ -12,13 +12,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var BlockRandomPayloadSize int
 var TCDelay int
-var MaxBlockSize int
+var TCBandwidth int
 
 func init() {
 	rootCmd.AddCommand(createExperimentCmd)
+	createExperimentCmd.Flags().IntVar(&BlockRandomPayloadSize, "block-payload-size", 1000000, "Specifies the maximum block size in bytes")
 	createExperimentCmd.Flags().IntVar(&TCDelay, "tc-delay", 0, "Specifies nodes outgoing communication delay in milliseconds")
-	createExperimentCmd.Flags().IntVar(&MaxBlockSize, "block-payload-size", 1000000, "Specifies the maximum block size in bytes")
+	createExperimentCmd.Flags().IntVar(&TCBandwidth, "tc-bandwidth", 0, "Specifies nodes outgoing and incomming data rate in Mbps")
 }
 
 var createExperimentCmd = &cobra.Command{
@@ -49,10 +51,13 @@ func createExperimentCmdRun(cmd *cobra.Command, args []string) {
 	err = dbConnector.Put(ExperimentNumberOfNodes, numberOfNodes)
 	handleErrorWithPanic(err)
 
-	err = dbConnector.Put(ExperimentMaxBlockSize, strconv.Itoa(MaxBlockSize))
+	err = dbConnector.Put(ExperimentMaxBlockSize, strconv.Itoa(BlockRandomPayloadSize))
 	handleErrorWithPanic(err)
 
 	err = dbConnector.Put(ExperimentNetworkDelay, strconv.Itoa(TCDelay))
+	handleErrorWithPanic(err)
+
+	err = dbConnector.Put(ExperimentNetworkBandwidth, strconv.Itoa(TCBandwidth))
 	handleErrorWithPanic(err)
 
 	networkFolderPath := args[0]

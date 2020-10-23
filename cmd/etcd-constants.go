@@ -9,6 +9,7 @@ var ExperimentNumberOfNodes = "/experiment/number-of-nodes"
 var ExperimentMaxBlockSize = "/experiment/max-block-size"
 
 var ExperimentNetworkDelay = "/experiment/tc-delay"
+var ExperimentNetworkBandwidth = "/experiment/tc-bandwidth"
 
 var ExperimentNodeFiles = "/experiment/node-data"
 
